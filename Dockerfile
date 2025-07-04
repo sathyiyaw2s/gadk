@@ -17,4 +17,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 8005
 
 # Run the FastMCP server
-CMD ["python", "agratas_mcp_server.py"]
+CMD ["python", "main.py"]
