@@ -1,61 +1,32 @@
-# main.py
 import os
 import importlib
-from fastmcp import FastMCP
-from pymongo import MongoClient
-from dotenv import load_dotenv
+import asyncio
+from server_instance import mcp
 
-load_dotenv()
+TOOLS_DIR = "tools"
 
-mcp = FastMCP(name="DynamicMCP")
-MODELFILES_DIR = "modelfile"
-
-def validate_tool_access(user_id: str, tool_name: str) -> bool:
-    try:
-        print(tool_name,"-------s")
-        client = MongoClient(os.getenv("MONGO_URI_DB"))
-        db = client["global_config_db"]
-        col = db["toolmap_configs"]
-        print("userid coming inside the validate tool",user_id)
-        doc = col.find_one({"user_id": user_id})
-        print(doc and tool_name in doc.get("tools", []),"----sending---")
-        return doc and tool_name in doc.get("tools", [])
-    except Exception as e:
-        print(f" Access validation failed: {e}")
-        return False
-
-def get_toolmap_from_db():
-    print("Get tools amd going")
-    client = MongoClient(os.getenv("MONGO_URI_DB"))
-    db = client["global_config_db"]
-    col = db["toolmap_configs"]
-    toolmap = {}
-    for doc in col.find():
-        toolmap[doc["user_id"]] = doc["tools"]
-    return toolmap
-
-def load_and_register_tools():
-    toolmap = get_toolmap_from_db()
-    print(toolmap,"----tool map info")
-    for user_id, tool_modules in toolmap.items():
-        for mod_name in tool_modules:
+def dynamic_import_tools():
+    for filename in os.listdir(TOOLS_DIR):
+        if filename.endswith(".py") and not filename.startswith("__"):
+            module_name = filename[:-3]
+            import_path = f"{TOOLS_DIR}.{module_name}"
             try:
-                module_path = f"{MODELFILES_DIR}.{mod_name}"
-                mod = importlib.import_module(module_path)
-                for func in getattr(mod, "EXPORTS", []):
-                    mcp.tool(func)
-                print(f"[✔] Loaded: {module_path}")
+                importlib.import_module(import_path)
+                print(f"Loaded tools from: {import_path}")
             except Exception as e:
-                print(f" Failed to load {mod_name}: {e}")
+                print(f"Failed to import {import_path}: {e}")
 
-@mcp.tool()
-def reload_tools():
-    """Reload all tools from MongoDB + modelfiles."""
-    print("-------sdsf")
-    load_and_register_tools()
-    print("----cam")
-    return {"status": "success", "message": "Tools reloaded"}
+async def main():
+    dynamic_import_tools()
+
+    tool_names = await mcp.get_tools()
+    print("\n Registered MCP Tools:")
+    for name in tool_names:
+        tool = await mcp.get_tool(name)
+        print(f"- Name: {tool.name}")
+        print(f"  Description: {tool.description}\n")
+
+    await mcp.run_async(transport="streamable-http", host="127.0.0.1", port=8005)
 
 if __name__ == "__main__":
-    load_and_register_tools()
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=8005)
+    asyncio.run(main())
